@@ -26,9 +26,10 @@ ISQM_ROWS_JSON = Path(__file__).resolve().parent / "isqm1_rows.json"
 # 출력 문단 행머리 판정 (파서와 동일해야 함)
 # 부록-사례N: 감사기준 예시 보고서의 사례 단위 가상 번호 (규약 4.3)
 # 사례[A-Z]: 실무서2(PS2)의 사례 상자 A~T / 참조N: PS2 부록 '개념체계와 기준서 참조' 발췌 단위
+# 정의-{용어}: 부록 A 용어정의 표의 행(용어) 단위 조각 (규약 4.3 용어집 갈래, 수정 8)
 # 한?[A-Z]{0,4}\.?\d: BA.1(1109 부록 B 말미) 같은 '영문자+점+숫자' 계열 포함
 HEAD_RE = re.compile(
-    r"^(부록-사례\d+|부록-?[0-9A-Za-z()]+|보론\d*-\d+|사례[A-Z]|참조\d+|한?[A-Z]{0,4}\.?\d[0-9A-Za-z.-]*)\.\s"
+    r"^(부록-사례\d+|부록-?[0-9A-Za-z()]+|보론\d*-\d+|사례[A-Z]|참조\d+|정의-[가-힣A-Za-z0-9()·-]+|한?[A-Z]{0,4}\.?\d[0-9A-Za-z.-]*)\.\s"
 )
 
 # 원본에 para 주석 없이 놓인 정본 문단의 무마침표 행머리 (예: 'A1<TAB>본문', 'D1 ', 'BA.1')
@@ -38,6 +39,41 @@ SERIES_START = re.compile(r"한?[A-Z]{1,4}\.?1")
 # 의결 문구(위원 명단·의결 사실 기재)는 정본 문단이 아니므로 제거
 BOILER_HEAD = re.compile(r"^회계기준위원회 위원\s*:")
 BOILER_VOTE = re.compile(r"회계기준위원회\S*\s*위원\s*\d+인.*의결하였다")
+
+# ── 부록 A 용어정의(용어집 갈래, 수정 8) ─────────────────────────────
+# 앵커: '**부록 A**'형 굵은 제목 + "용어의 정의" + 정본 선언문의 근접 출현 (제목 표기가 파일마다 다름)
+GLOSS_ANCHOR = re.compile(r"^\*\*\s*부록\s*A[.．]?\s*(용어의\s*정의)?\s*\*\*\s*$")
+GLOSS_DECL = re.compile(r"^\*이 부록은\s*(이\s*)?기준서의 일부를 구성한다")
+# 원본 표에서 용어 셀이 줄넘김으로 별도 표 행에 떨어진 곳 — (기준서, 조각 텍스트, 직전 용어행 첫 셀)
+# 자동 판정 불가(예: 1109 '손실충당금'은 정의문이 목록으로 시작하는 독립 용어)라 명시 목록으로 고정
+GLOSS_WRAP = {
+    ("1101", "회계기준 재무상태표", "개시 한국채택국제"),
+    ("1101", "회계기준 보고기간", "최초 한국채택국제"),
+    ("1101", "회계기준 재무제표", "최초 한국채택국제"),
+    ("1101", "기준", "한국채택국제회계"),
+    ("1101", "기준 전환일", "한국채택국제회계"),
+    ("1102", "(주식옵션)", "주식선택권"),
+    ("1109", "매도", "정형화된 매입 또는"),
+    ("1113", "투입변수", "관측할 수 있는"),
+    ("1116", "증분차입이자율", "리스이용자의"),
+    ("1117", "보험계약", "직접참가특성이 있는"),
+    ("1117", "없는 보험계약", "직접참가특성이"),
+    ("1117", "포트폴리오", "보험계약"),
+}
+# 감사기준 쪽 용어집: (기준서, 부록 순번) — 1200 부록1(용어 정의 표 65행)이 유일
+GLOSS_ISA = {("1200", 1)}
+
+
+def gloss_disp(term):
+    """용어의 표시 표기: 각주 참조([^N]·한N))와 굵은 글씨 마커 제거, 공백 정리"""
+    t = re.sub(r"\[\^\d+\]", "", term)
+    t = re.sub(r"한\d+\)\s*$", "", t.strip())
+    return re.sub(r"\s+", " ", t.replace("*", "")).strip()
+
+
+def gloss_norm(term):
+    """para_no용 용어명 정규화: 표시 표기에서 공백만 제거 (괄호·가운뎃점·하이픈 보존)"""
+    return re.sub(r"\s+", "", gloss_disp(term))
 
 
 def para_series(p):
@@ -355,6 +391,21 @@ def convert_isa_file(path, expected):
                 continue
             absorb_sect = None
 
+        # 용어집 부록(1200 부록1): 표의 행 = 용어 하나 = 정의-{용어} 조각 (수정 8)
+        if in_ex_app and (std_no, appendix_ord) in GLOSS_ISA and s.startswith("|"):
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if all(re.fullmatch(r"-*", c) for c in cells) or cells[0] == "용어":
+                i += 1
+                continue  # 구분행·헤더행
+            if cells[0]:
+                term = gloss_disp(cells[0])
+                em.para(f"정의-{gloss_norm(cells[0])}.", f"{term}: {cells[1] if len(cells) > 1 else ''}")
+                pending_app = None
+            elif len(cells) > 1 and cells[1]:
+                em.cont("\t" + cells[1])
+            i += 1
+            continue
+
         # 예시문 부록 구역: 사례 경계 절단 + 부록 서두 조각
         if in_ex_app:
             s2 = s.lstrip(">").strip() if s.startswith(">") else s
@@ -530,7 +581,11 @@ def convert_ifrs_file(path, expected):
     promoted = []      # para 주석 없이 행머리 패턴으로 승격한 문단 (검수 보고용)
     n_boiler = 0
     ps2_app = False    # PS2 부록(개념체계와 기준서 참조) 구역
-    ref_n = 0          # PS2 부록의 발췌 단위 순번 → 참조N
+    ref_n = 0          # 참조N 순번 (PS2 부록 발췌 단위 / 부록 A의 타 기준서 참조 블록)
+    gloss = False          # 부록 A 용어집 구역 (수정 8)
+    gloss_prev_raw = None  # 직전 용어 시작 행의 원문 첫 셀 (GLOSS_WRAP 판정 키)
+    gloss_last_idx = None  # 마지막 정의 조각의 em.lines 위치 (wrap 결합용)
+    gloss_last_disp = None
 
     # 각 행 뒤(빈 행 건너뜀)에 para 주석이 오는지 미리 계산 — 주석이 확정할 행은 승격하지 않는다
     follows_para = [False] * len(lines)
@@ -586,6 +641,7 @@ def convert_ifrs_file(path, expected):
             if is_cf and t == "적용사례":
                 t = "본문"  # 경영진설명서·실무서2는 본문이 '적용사례'로 오태깅됨
             body_started = True
+            gloss = False  # 절 제목 도달 = 부록 A 구역 종료 (1106 '결론도출근거', 1108 '적용사례')
             if lvl == 2:
                 h2, h3 = t, None
                 if t.startswith("결론도출근거"):
@@ -608,7 +664,65 @@ def convert_ifrs_file(path, expected):
         # 의결 문구(위원 명단 등)는 정본 문단이 아님 — 제거
         if BOILER_HEAD.match(s.strip()) or BOILER_VOTE.search(s):
             n_boiler += 1
+            gloss = False  # 의결 문구 도달 = 부록 A 구역 종료 (1106·1108: 부록 B 없이 끝남)
             continue
+        # 부록 A 용어정의(용어집) 진입 — 앵커 3요소(제목·'용어의 정의'·정본 선언문) 근접 확인 (수정 8)
+        if not is_cf and not gloss:
+            am = GLOSS_ANCHOR.match(s.strip())
+            if am:
+                near = [lines[j].strip() for j in range(i + 1, min(i + 7, len(lines)))]
+                titled = bool(am.group(1)) or "**용어의 정의**" in near
+                if titled and any(GLOSS_DECL.match(x) for x in near):
+                    gloss = True
+                    gloss_prev_raw = gloss_last_idx = gloss_last_disp = None
+                    em.set_section("부록 A 용어의 정의")
+                    last_content_idx = None
+                    continue
+        if gloss:
+            t = s.strip()
+            if t == "**용어의 정의**" or GLOSS_DECL.match(t):
+                continue  # 제목 이어행·정본 선언문 — 절 선언에 흡수
+            if t.startswith("**부록"):
+                gloss = False  # 다음 부록 제목 — 기존 흐름으로 흘려보냄
+            elif t.startswith("|"):
+                cells = [x.strip() for x in t.strip("|").split("|")]
+                if all(re.fullmatch(r"-*", x) for x in cells):
+                    continue
+                first, rest = cells[0], (cells[1] if len(cells) > 1 else "")
+                if first and (std_no, first, gloss_prev_raw) in GLOSS_WRAP:
+                    # 줄넘김으로 별도 행에 떨어진 용어 셀 — 직전 조각의 용어명에 결합
+                    new_disp = f"{gloss_last_disp} {gloss_disp(first)}"
+                    defn = em.lines[gloss_last_idx].split("\t", 1)[1][len(gloss_last_disp) + 2:]
+                    new_no = "정의-" + re.sub(r"\s+", "", new_disp)
+                    em.lines[gloss_last_idx] = f"{new_no}.\t{new_disp}: {defn}".rstrip()
+                    em.paras[-1] = new_no
+                    gloss_last_disp = new_disp
+                    if rest:
+                        em.cont("\t" + rest)
+                elif first:
+                    term = gloss_disp(first)
+                    em.para(f"정의-{gloss_norm(first)}.", f"{term}: {rest}")
+                    gloss_prev_raw = first
+                    gloss_last_idx = len(em.lines) - 1
+                    gloss_last_disp = term
+                elif rest:
+                    em.cont("\t" + rest)  # 빈 첫 셀 = 직전 정의문의 이어지는 행
+                last_content_idx = None
+                continue
+            elif re.fullmatch(r"\*\*.+\*\*", t):
+                # 1116: '다른 기준서에서 정의하고 …' 굵은 소제목 → 하위 절 (정의 표가 이어짐)
+                em.set_section("부록 A 용어의 정의 > " + t.strip("*").strip())
+                continue
+            elif re.search(r"다음\S*\s*용어는", t):
+                # 타 기준서 정의를 가리키는 안내문 + 용어 나열 → 참조N 조각 (para_type "참조")
+                ref_n += 1
+                em.para(f"참조{ref_n}.", t)
+                last_content_idx = None
+                continue
+            else:
+                em.cont(t)  # 용어 나열·각주 텍스트 등 — 직전 조각(참조N/정의)에 귀속
+                last_content_idx = None
+                continue
         # 목차 표 제거 (규약 4.2 제거 대상)
         if s.lstrip().startswith("|") and re.search(r"목\s*차", s):
             in_toc_table = True
@@ -696,7 +810,7 @@ KSA_SPLIT_EXPECT = {
     "ksa_700.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 5)],
     "ksa_705.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 6)],
     "ksa_720.md": ["부록1", "부록2"] + [f"부록-사례{n}" for n in range(1, 8)],
-    "ksa_1200.md": ["부록1", "부록2"] + [f"부록-사례{n}" for n in range(1, 11)],
+    "ksa_1200.md": ["부록2"] + [f"부록-사례{n}" for n in range(1, 11)],  # 부록1은 정의-{용어} 65개로 분해(수정 8)
     "ksa_240.md": ["부록1", "부록2", "부록3"],
     "ksa_710.md": [f"부록-사례{n}" for n in range(1, 5)],
     "ksa_570.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 4)],
@@ -722,8 +836,32 @@ PS2_EXPECT = {
     "참조": [f"참조{n}" for n in range(1, 5)],
 }
 
-# 6,000자 초과 잔존 허용 문단 — 이 2건(통짜 표·목록)으로 수렴해야 완료 (수정 6 완료 판정)
-WARN_ALLOW = {("ksa_1200.md", "부록1"), ("ksa_240.md", "부록1")}
+# 6,000자 초과 잔존 허용 문단 — 이 1건(통짜 목록)으로 수렴해야 완료
+# (수정 8: ksa_1200 부록1은 정의-{용어} 65개로 분해되어 목록에서 제외)
+WARN_ALLOW = {("ksa_240.md", "부록1")}
+
+# 부록 A 용어정의 존재 검사(양성) — 파일별 기대 (정의 조각 수, 참조 조각 수). 수정 8
+# '있어야 할 것의 부재'형 결함(최초 변환부터의 용어집 탈락)의 재발을 구조적으로 차단한다.
+# 원본 표 행수에서 산출: 표 행수 − 용어 셀 줄넘김(GLOSS_WRAP) 결합분
+GLOSS_EXPECT = {
+    "kifrs_1101.md": (10, 0),   # 15행 − wrap 5
+    "kifrs_1102.md": (20, 0),   # 21행 − wrap 1
+    "kifrs_1103.md": (14, 0),
+    "kifrs_1105.md": (13, 0),
+    "kifrs_1106.md": (3, 0),
+    "kifrs_1107.md": (8, 1),    # 참조1 = 1032·1039·1109·1113 정의 용어 목록
+    "kifrs_1108.md": (1, 0),    # '영업부문' 단일 용어
+    "kifrs_1109.md": (28, 1),   # 29행 − wrap 1 / 참조1 = 1032·1107·1113 정의 용어 목록
+    "kifrs_1110.md": (12, 1),
+    "kifrs_1111.md": (8, 1),
+    "kifrs_1112.md": (3, 1),
+    "kifrs_1113.md": (25, 0),   # 26행 − wrap 1
+    "kifrs_1114.md": (7, 0),
+    "kifrs_1115.md": (9, 0),
+    "kifrs_1116.md": (32, 0),   # 33행 − wrap 1. 타 기준서 용어는 하위 절의 정의 조각
+    "kifrs_1117.md": (22, 0),   # 25행 − wrap 3
+    "ksa_1200.md": (65, None),  # 감사기준 유일의 용어표 (참조 검사는 감사기준 체계와 무관 — 제외)
+}
 
 # 출력에서 무마침표 문단머리로 의심되는 행 (잔존 시 실패)
 NOPD_OUT = re.compile(r"^(한?[A-Z]{1,4}\.?\d[0-9A-Za-z.]*)[ \t]+\S")
@@ -789,8 +927,18 @@ def validate(expected):
                     f"{fname}: 예시문 분리 불일치 exp={KSA_SPLIT_EXPECT[fname]} got={got_pseudo}"
                 )
 
+        # 부록 A 용어정의 존재 검사(양성): 기대 파일은 정의-/참조 조각 수 일치, 그 외 파일은 0
+        n_def = sum(1 for p in got if p.startswith("정의-"))
+        exp_def, exp_ref = GLOSS_EXPECT.get(fname, (0, 0 if fname != "kifrs_ps2.md" else None))
+        if n_def != exp_def:
+            problems.append(f"{fname}: 정의 조각 수 불일치 exp={exp_def} got={n_def}")
+        if exp_ref is not None and fname.startswith("kifrs_"):
+            n_ref = sum(1 for p in got if re.fullmatch(r"참조\d+", p))
+            if n_ref != exp_ref:
+                problems.append(f"{fname}: 참조 조각 수 불일치 exp={exp_ref} got={n_ref}")
+
         # 상설 구조 검사: 정규 번호 문단 블록이 '보론' 절 제목(##)을 가로지르면 병합 잔존
-        # (부록/보론/사례/참조 가상 번호 조각은 자기 하위 절을 품을 수 있으므로 제외)
+        # (부록/보론/사례/참조/정의 가상 번호 조각은 자기 하위 절을 품을 수 있으므로 제외)
         cur_head, boron_pend = None, False
         for l in body.split("\n"):
             hm2 = HEAD_RE.match(l)
@@ -798,7 +946,7 @@ def validate(expected):
                 cur_head, boron_pend = hm2.group(1), False
             elif l.startswith("## ") and "보론" in l:
                 boron_pend = cur_head is not None and not cur_head.startswith(
-                    ("부록", "보론", "사례", "참조")
+                    ("부록", "보론", "사례", "참조", "정의")
                 )
             elif boron_pend and l.strip() and not l.startswith("## "):
                 problems.append(f"{fname}: {cur_head} 문단이 보론 절 제목을 가로지름 (병합 잔존)")
