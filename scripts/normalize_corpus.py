@@ -25,9 +25,10 @@ ISQM_ROWS_JSON = Path(__file__).resolve().parent / "isqm1_rows.json"
 
 # 출력 문단 행머리 판정 (파서와 동일해야 함)
 # 부록-사례N: 감사기준 예시 보고서의 사례 단위 가상 번호 (규약 4.3)
+# 사례[A-Z]: 실무서2(PS2)의 사례 상자 A~T / 참조N: PS2 부록 '개념체계와 기준서 참조' 발췌 단위
 # 한?[A-Z]{0,4}\.?\d: BA.1(1109 부록 B 말미) 같은 '영문자+점+숫자' 계열 포함
 HEAD_RE = re.compile(
-    r"^(부록-사례\d+|부록-?[0-9A-Za-z()]+|보론\d*-\d+|한?[A-Z]{0,4}\.?\d[0-9A-Za-z.-]*)\.\s"
+    r"^(부록-사례\d+|부록-?[0-9A-Za-z()]+|보론\d*-\d+|사례[A-Z]|참조\d+|한?[A-Z]{0,4}\.?\d[0-9A-Za-z.-]*)\.\s"
 )
 
 # 원본에 para 주석 없이 놓인 정본 문단의 무마침표 행머리 (예: 'A1<TAB>본문', 'D1 ', 'BA.1')
@@ -148,9 +149,9 @@ def write_output(fname, fm_pairs, em, expected_registry):
 
 # ══════════════════════════════ 감사기준 (auditstandard_md/) ══════════════════════════════
 
-# 번호 없는 예시문 부록이 직전 실문단에 병합되는 5개 파일: 부록/사례 단위로 절단한다.
+# 번호 없는 예시문 부록이 직전 실문단에 병합되는 파일들: 부록/사례 단위로 절단한다.
 # ID는 규약 4.3의 가상 번호 — 부록N(부록 서두·목록형 부록), 부록-사례N(예시 보고서 한 건)
-EX_SPLIT_FILES = {"700", "705", "720", "1200", "240"}
+EX_SPLIT_FILES = {"700", "705", "720", "1200", "240", "710", "570", "1100", "600"}
 CASE_HEAD = re.compile(r"사례\s*(\d+)([\s\-–—::].*)?$")
 
 
@@ -216,6 +217,14 @@ def convert_isa_file(path, expected):
             seen_first_h2 = True
             htext = hm.group(2).strip()
             if ex_split:
+                # 부록 내부의 '#### 사례 N - …' 제목(ISA-1100)은 절이 아니라 사례 절단선
+                mc = CASE_HEAD.match(htext)
+                if in_ex_app and mc and int(mc.group(1)) == case_next:
+                    em.para(f"부록-사례{case_next}.", htext)
+                    case_next += 1
+                    pending_app = None
+                    i += 1
+                    continue
                 # 부록 제목 감지: 제목행 (+ 제목 이어행) 뒤에 section: appendix 주석
                 nxt1 = lines[i + 1] if i + 1 < len(lines) else ""
                 nxt2 = lines[i + 2] if i + 2 < len(lines) else ""
@@ -478,6 +487,8 @@ def convert_ifrs_file(path, expected):
     dropped_warn = []
     promoted = []      # para 주석 없이 행머리 패턴으로 승격한 문단 (검수 보고용)
     n_boiler = 0
+    ps2_app = False    # PS2 부록(개념체계와 기준서 참조) 구역
+    ref_n = 0          # PS2 부록의 발췌 단위 순번 → 참조N
 
     # 각 행 뒤(빈 행 건너뜀)에 para 주석이 오는지 미리 계산 — 주석이 확정할 행은 승격하지 않는다
     follows_para = [False] * len(lines)
@@ -569,6 +580,28 @@ def convert_ifrs_file(path, expected):
             em.para(spm.group(1) + ".", spm.group(2))
             last_content_idx = None
             continue
+        # PS2(중요성 실무서) 특례 — 사례 상자(표 형식)와 부록 발췌 단위 절단
+        if std_no == "PS2":
+            # 사례 A~T 상자: '| 사례 X—제목 |' 행이 상자 시작
+            pcm = re.match(r"\|\s*사례\s*([A-T])\s*[—–-]", s)
+            if pcm:
+                em.para(f"사례{pcm.group(1)}.", s.strip())
+                last_content_idx = None
+                continue
+            # 부록 '개념체계와 기준서 참조': 발췌 제목(굵은 글씨) 경계로 참조N 절단
+            if s.strip() == "**부록**":
+                ps2_app = True
+                em.set_section("부록 — 재무보고를 위한 개념체계와 기업회계기준서 참조")
+                continue
+            if ps2_app:
+                if s.strip() == "**재무보고를 위한 개념체계와 기업회계기준서 참조**":
+                    continue  # 부록 제목 이어행 — 절 제목에 흡수됨
+                rm = re.fullmatch(r"\*\*(.+?에서 발췌)\*\*", s.strip())
+                if rm:
+                    ref_n += 1
+                    em.para(f"참조{ref_n}.", rm.group(1))
+                    last_content_idx = None
+                    continue
         # 정본 문단 행머리 복원: 원본이 para 주석 없이 둔 부록 문단(D1, A1, BA.1, C20BA 등).
         # 오탐 방지 — 직전 문단과 같은 영문자 계열이거나 계열 시작(X1)일 때만 승격.
         if not s.startswith(("\t", " ", "|", ">")) and not follows_para[i]:
@@ -616,14 +649,27 @@ INT_GAP_ALLOW = {
     "ksa_assr-3000.md": {(45, 50)},  # 문단 46~49는 2열 대비표 — 문서화된 한계
 }
 
-# 감사기준 예시문 분리 결과의 기대 조각 (수정 1의 검수 고정값)
+# 감사기준 예시문 분리 결과의 기대 조각 (검수 고정값)
 KSA_SPLIT_EXPECT = {
     "ksa_700.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 5)],
     "ksa_705.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 6)],
     "ksa_720.md": ["부록1", "부록2"] + [f"부록-사례{n}" for n in range(1, 8)],
     "ksa_1200.md": ["부록1", "부록2"] + [f"부록-사례{n}" for n in range(1, 11)],
     "ksa_240.md": ["부록1", "부록2", "부록3"],
+    "ksa_710.md": [f"부록-사례{n}" for n in range(1, 5)],
+    "ksa_570.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 4)],
+    "ksa_1100.md": ["부록1"] + [f"부록-사례{n}" for n in range(1, 4)],
+    # 600의 부록-51~ 번호 문단은 원본 유래라 기대 목록에서 제외 (부록N 서두 조각만 검사)
 }
+
+# PS2(중요성 실무서) 분리 기대: 사례 상자 A~T 20개 + 부록 발췌 참조1~4
+PS2_EXPECT = {
+    "사례": [f"사례{chr(c)}" for c in range(ord("A"), ord("T") + 1)],
+    "참조": [f"참조{n}" for n in range(1, 5)],
+}
+
+# 6,000자 초과 잔존 허용 문단 — 이 2건(통짜 표·목록)으로 수렴해야 완료 (수정 6 완료 판정)
+WARN_ALLOW = {("ksa_1200.md", "부록1"), ("ksa_240.md", "부록1")}
 
 # 출력에서 무마침표 문단머리로 의심되는 행 (잔존 시 실패)
 NOPD_OUT = re.compile(r"^(한?[A-Z]{1,4}\.?\d[0-9A-Za-z.]*)[ \t]+\S")
@@ -661,17 +707,18 @@ def validate(expected):
         if suspects:
             problems.append(f"{fname}: 무마침표 문단머리 의심 행 {len(suspects)}건 {suspects[:3]}")
 
-        # 문단 크기 측정 (6,000자 초과는 경고 — 적재기 분할 정책 대상)
+        # 문단 크기 측정 — 6,000자 초과는 WARN_ALLOW의 통짜 표·목록 2건으로 수렴해야 함
         cur, size = None, 0
-        for l in body.split("\n"):
-            if HEAD_RE.match(l):
+        for l in body.split("\n") + [None]:
+            if l is None or HEAD_RE.match(l):
                 if cur and size > 6000:
                     warnings.append(f"{fname}: {cur} = {size:,}자")
-                cur, size = HEAD_RE.match(l).group(1), len(l)
+                    if (fname, cur) not in WARN_ALLOW:
+                        problems.append(f"{fname}: 허용 외 6,000자 초과 문단 {cur} ({size:,}자)")
+                if l is not None:
+                    cur, size = HEAD_RE.match(l).group(1), len(l)
             else:
                 size += len(l)
-        if cur and size > 6000:
-            warnings.append(f"{fname}: {cur} = {size:,}자")
 
         # 정수 문단 건너뜀 검사 (허용목록 외 신규 구멍은 실패)
         ints = sorted({int(p) for p in got if p.isdigit()})
@@ -687,6 +734,15 @@ def validate(expected):
                 problems.append(
                     f"{fname}: 예시문 분리 불일치 exp={KSA_SPLIT_EXPECT[fname]} got={got_pseudo}"
                 )
+        if fname == "ksa_600.md":
+            got_intro = [p for p in got if re.fullmatch(r"부록\d", p)]
+            if got_intro != [f"부록{n}" for n in range(1, 6)]:
+                problems.append(f"{fname}: 보론 서두 조각 불일치 got={got_intro}")
+        if fname == "kifrs_ps2.md":
+            for kind, exp_ids in PS2_EXPECT.items():
+                got_k = [p for p in got if p.startswith(kind)]
+                if got_k != exp_ids:
+                    problems.append(f"{fname}: {kind} 조각 불일치 exp={exp_ids} got={got_k}")
 
     gdup = [k for k, n in all_ids.items() if n > 1]
     if gdup:
