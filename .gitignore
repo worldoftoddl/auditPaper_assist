@@ -1,0 +1,7 @@
+.env
+.venv/
+__pycache__/
+index/cache/
+index/embed_input.jsonl
+index/embeddings.npy
+index/cids.json

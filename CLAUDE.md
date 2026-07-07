@@ -16,7 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `ifrs_md/` — (원본) K-IFRS 기준서. 계열별 하위 폴더: `IAS_10XX/`, `IFRS_11XX/`, `IFRIC_21XX/`, `SIC_20XX/`.
 - `Conceptual_framework_md/` — (원본) 재무보고를 위한 개념체계, 경영진설명서 개념체계, 중요성 실무서 3개 파일.
 - `guidelines_raw/` — 실무지침 원본(DOC/DOCX/PDF)과 벡터 저장소 설계 문서(`벡터저장소_스키마_및_마크다운_작성규약.md` — 목표 규약).
-- `scripts/` — 변환 스크립트.
+- `scripts/` — 변환 스크립트(`normalize_corpus.py`)와 적재기(`build_index.py` — corpus_md+guidelines_md → Qdrant Cloud, 지시서 `TASK.md`).
+- `index/` — 적재기 산출물(vocab.json·glossary.jsonl·manifest.json). 구현 확정·이탈 기록은 `index/README.md` 참조. Qdrant 접속 정보는 `.env`(gitignore)의 `QDRANT_URL`/`QDRANT_API_KEY`.
 
 `corpus_md/`와 `guidelines_md/`는 모두 목표 규약 4장을 따른다: frontmatter 3필드(`source_type`/`standard_no`(따옴표 문자열)/`standard_title`) + `##` 절 제목(`상위 > 하위` 합성) + 행 머리 `번호.` 문단 절단. 청크 ID: `KSA::<번호>::<문단>` / `KIFRS::<번호>::<문단>` / `GUIDE::<번호>::<문단>`.
 
