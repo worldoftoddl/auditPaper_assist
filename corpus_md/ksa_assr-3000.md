@@ -1,7 +1,7 @@
 ---
 source_type: 감사기준
 standard_no: "ASSR-3000"
-standard_title: 보론
+standard_title: 역사적 재무정보에 대한 감사 및 검토 이외의 인증업무기준
 origin: auditstandard_md/ASSR-3000.md
 ---
 

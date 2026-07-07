@@ -1,7 +1,7 @@
 ---
 source_type: 감사기준
 standard_no: "FRMK-1"
-standard_title: 보론 4
+standard_title: 인증업무개념체계
 origin: auditstandard_md/FRMK-1.md
 ---
 

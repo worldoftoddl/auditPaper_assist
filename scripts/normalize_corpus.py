@@ -327,17 +327,19 @@ def convert_isa_file(path, expected):
                 and re.fullmatch(r"보론\s*(\d*)", s):
             n = re.fullmatch(r"보론\s*(\d*)", s).group(1)
             boron = f"보론{n}-" if n else "보론-"
-            title = next(
+            # 주의: 파일 제목 변수 title과 별개의 지역명을 쓸 것 — 같은 이름을 쓰면
+            # 마지막 보론 제목이 frontmatter standard_title을 덮어쓴다 (FRMK/ASSR 오염 버그)
+            sect_title = next(
                 (t for t in boron_titles if t.startswith(f"보론 {n}" if n else "보론:")), s
             )
-            em.set_section(title)
+            em.set_section(sect_title)
             pending_num = None
             if std_id == "FRMK-1":
                 # FRMK 보론의 무번호 서두(보론 1은 전체가 도표)는 부록N 조각으로
                 in_ex_app = True
                 pending_app = f"부록{n or 1}"
             else:
-                absorb_sect = title
+                absorb_sect = sect_title
             i += 1
             continue
 

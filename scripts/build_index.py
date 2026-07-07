@@ -677,7 +677,9 @@ def stage_upsert(records, texts, dense, sparse_vecs, smeta, report, ext_meta=Non
     ok2 = run_smokes(client, records, model, report)
 
     # 매니페스트 — 재구축 계약서 (접속 정보 절대 미포함)
-    corpus_commit = os.popen(f"git -C {ROOT} rev-parse HEAD").read().strip()
+    # tarball 실행(Colab 등, .git 부재) 시 CORPUS_COMMIT 환경변수로 폴백
+    corpus_commit = (os.popen(f"git -C {ROOT} rev-parse HEAD 2>/dev/null").read().strip()
+                     or os.environ.get("CORPUS_COMMIT", "unknown"))
     try:
         rev = model._model_card_vars.get("base_model_revision")
     except Exception:
