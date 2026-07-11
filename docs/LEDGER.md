@@ -221,3 +221,14 @@ bge-m3 로드(~30초+)가 기동 경로에 있으면 MCP initialize가 클라이
 (①차원·⑥프로브)는 백그라운드 스레드에서 완결 — 실패 시 `os._exit(1)`로 기동 거부 의미
 보존. standards_search만 인코더 준비 대기(최대 300초), get_paragraph·define_terms는 즉시
 동작. 실측: initialize 5.5초, search 활성 ~38초.
+
+#### D-21 HTTP 원격 공유: Host 가드 개방 + Bearer 토큰 인증
+2026-07-11 · server · 8113e39 이후
+원격 공유용 `MCP_TRANSPORT=http` 추가 시 FastMCP 기본 Host 헤더 가드(DNS rebinding
+방어, localhost만 허용)가 프록시·터널 뒤의 공개 도메인 Host에 일괄 421을 반환 —
+trycloudflare·HF Space 양쪽에서 "터널 불량"으로 오진했으나(콜랩 노트북 3699bc8의
+"trycloudflare 불안정 실측" 기록은 오진) 실범은 자체 서버. `allowed_hosts` 기본을
+`*`로 개방(MCP_ALLOWED_HOSTS로 축소 가능)하고 접근 통제는 정적 Bearer 토큰
+(MCP_AUTH_TOKEN, 16자 미만·부재 시 기동 거부)이 담당 — 브라우저는 교차 출처로
+Authorization 헤더를 실을 수 없어 rebinding 실익 없음. 실측: 위조 Host+무토큰 401,
+정토큰 200, trycloudflare 터널 경유 정상 왕복.

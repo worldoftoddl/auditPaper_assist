@@ -141,10 +141,15 @@ def main():
                   file=sys.stderr)
             sys.exit(1)
         host, port = os.environ.get("MCP_HOST", "127.0.0.1"), int(os.environ.get("MCP_PORT", "8000"))
+        # FastMCP의 Host 헤더 가드(DNS rebinding 방어)는 기본 localhost만 허용해 프록시·터널
+        # 뒤에서는 공개 도메인 Host에 421을 낸다. 접근 통제는 Bearer 토큰이 담당하므로
+        # (브라우저는 교차 출처로 Authorization 헤더를 못 실어 rebinding 실익 없음)
+        # 기본을 전체 허용으로 열고, 좁히려면 MCP_ALLOWED_HOSTS(쉼표 구분)로 지정한다.
+        allowed = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "*").split(",") if h.strip()]
         app = build_app(auth=_static_token_auth(token))
-        log(f"[mcp_server] auditpaper-standards 기동 (http {host}:{port}/mcp, Bearer 인증)"
-            " — 인코더는 백그라운드 로드 중")
-        app.run(transport="http", host=host, port=port, path="/mcp")
+        log(f"[mcp_server] auditpaper-standards 기동 (http {host}:{port}/mcp, Bearer 인증, "
+            f"허용 호스트 {allowed}) — 인코더는 백그라운드 로드 중")
+        app.run(transport="http", host=host, port=port, path="/mcp", allowed_hosts=allowed)
     else:
         app = build_app()
         log("[mcp_server] auditpaper-standards 기동 (stdio) — 인코더는 백그라운드 로드 중")
