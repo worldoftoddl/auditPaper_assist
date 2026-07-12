@@ -1,7 +1,7 @@
 {
-  "corpus_commit": "6a8c8c92f226831b8ccf26c88c4effecfd7c780a",
-  "collection": "standards_20250829_bgem3",
-  "meta_collection": "standards_20250829_bgem3_meta",
+  "corpus_commit": "9f6686497fb699a0327ad800efe77f5055ddfd92",
+  "collection": "standards_20250829_bgem3_v2",
+  "meta_collection": "standards_20250829_bgem3_v2_meta",
   "payload_document": true,
   "uuid5_namespace": "github.com/worldoftoddl/auditPaper_assist",
   "embedding": {
@@ -11,15 +11,15 @@
     "dim": 1024,
     "max_tokens": 8192,
     "library": "sentence-transformers",
-    "embeddings_sha256": "177b5c4c07335ead9fdf9c9d634d705a3a49b053d46a41fda2bc0b612e977b96",
+    "embeddings_sha256": "4557cf8cb88c219a10f70c5a43d979de4fb1ad9000504991c43b3646b9454a54",
     "embedding_device": "colab-NVIDIA L4-fp16",
     "embedding_runtime": "FlagEmbedding 1.4.0, torch 2.11.0+cu128, transformers 5.12.1",
-    "rows": 10063,
+    "rows": 20552,
     "dtype": "float32",
-    "corpus_commit": "ffb3875dfa91b17912911c2967dd9bb2471395bd",
-    "input_sha256": "faa94632d99cf11e0d84dd34d1e65f853e42887158f105affdbd6ec185d8ce28",
-    "cids_sha256": "0c83f69a661aa6b1724b80da49ba6c99cd36261777659600a1911fda3e3f3a4c",
-    "generated_at": "2026-07-07T06:16:15.312423+00:00"
+    "corpus_commit": "9f6686497fb699a0327ad800efe77f5055ddfd92",
+    "input_sha256": "cc1caa1ea14142a5be04347d2a5a089e99f8e9501ca2f3d8c102f73d15f15c38",
+    "cids_sha256": "f1a20639e890b9e6d5b0bb5743041f6f7a57dd901826ba426e61d1d15f4a0101",
+    "generated_at": "2026-07-12T07:59:28.963303+00:00"
   },
   "sparse": {
     "tokenizer": "kiwipiepy",
@@ -35,22 +35,81 @@
     "lowercase_SL": true,
     "k1": 1.5,
     "b": 0.75,
-    "avgdl": 69.5479,
-    "vocab_size": 4904,
-    "doc_count": 10063,
+    "avgdl": 77.9364,
+    "vocab_size": 9717,
+    "doc_count": 20552,
     "query_side": "토큰당 1.0 (IDF는 Qdrant 서버가 적용)"
   },
-  "paragraphs": 10062,
-  "points": 10063,
+  "paragraphs": 20536,
+  "points": 20552,
   "para_type_expected": {
     "정의": 280,
-    "참조": 14
+    "참조": 14,
+    "결론도출근거": 8721,
+    "적용사례": 1753
   },
   "split": {
     "KSA::240::부록1": {
       "parts": 2,
-      "boundary": "자산의 횡령으로 인한 왜곡표시"
+      "boundaries": [
+        "자산의 횡령으로 인한 왜곡표시"
+      ]
+    },
+    "KIFRS::1109::BCG.2": {
+      "parts": 4,
+      "boundaries": [
+        "DO3\tIAS 39를 IFRS 9로 대체하는 주된 목적 중 하나는 금",
+        "기타 참고사항",
+        "[^43]: 이 금액은 제2기간 말에 통합 익스포저의 현재가치 변동으"
+      ]
+    },
+    "KIFRS::1115::BC510": {
+      "parts": 4,
+      "boundaries": [
+        "| B27 | 606-10-55-29 |",
+        "| IE291 | 606-10-55-377 |",
+        "[^9]: IASB는 IFRS 17 ‘보험계약’을 공표함으로써 보험과"
+      ]
+    },
+    "KIFRS::1109::IE159": {
+      "parts": 3,
+      "boundaries": [
+        "**채무상품의 존속기간에 이자율이 사전에 산정된 방식에 따라 점진적으",
+        "**D.2.2 매매일 또는 결제일: 매도에 따라 기록할 금액**"
+      ]
+    },
+    "KIFRS::1108::BC62": {
+      "parts": 3,
+      "boundaries": [
+        "**양적기준**",
+        "106.\t수익이 어떻게 개별 국가에 배분되어야 하는지에 대하여 의문을"
+      ]
+    },
+    "KIFRS::1012::IE사례3-4": {
+      "parts": 3,
+      "boundaries": [
+        "(i) 회계이익에 적용세율을 곱하여 산출한 금액과 법인세비용(수익)간",
+        "20X1년 1월 1일에 기업 A는 기업 B를 100% 취득하였다. 기"
+      ]
+    },
+    "KIFRS::1001::BC106": {
+      "parts": 2,
+      "boundaries": [
+        "**이 기준서의 주요 특징**"
+      ]
+    },
+    "KIFRS::1001::IG6": {
+      "parts": 2,
+      "boundaries": [
+        "| 당기손익으로 재분류될 수 있는 항목과 관련된 법인세⑵ | (1,1"
+      ]
+    },
+    "KIFRS::1116::IE2": {
+      "parts": 2,
+      "boundaries": [
+        "| 사례 9B: 고객은 공급자와 3년간 분명히 특정된 발전소에서 생산"
+      ]
     }
   },
-  "generated_at": "2026-07-08T01:10:54.584310+00:00"
+  "generated_at": "2026-07-12T08:05:35.907802+00:00"
 }

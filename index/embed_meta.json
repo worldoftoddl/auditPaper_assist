@@ -2,12 +2,12 @@
   "embedding_device": "colab-NVIDIA L4-fp16",
   "embedding_runtime": "FlagEmbedding 1.4.0, torch 2.11.0+cu128, transformers 5.12.1",
   "model": "BAAI/bge-m3",
-  "rows": 10063,
+  "rows": 20552,
   "dim": 1024,
   "dtype": "float32",
-  "corpus_commit": "ffb3875dfa91b17912911c2967dd9bb2471395bd",
-  "input_sha256": "faa94632d99cf11e0d84dd34d1e65f853e42887158f105affdbd6ec185d8ce28",
-  "embeddings_sha256": "177b5c4c07335ead9fdf9c9d634d705a3a49b053d46a41fda2bc0b612e977b96",
-  "cids_sha256": "0c83f69a661aa6b1724b80da49ba6c99cd36261777659600a1911fda3e3f3a4c",
-  "generated_at": "2026-07-07T06:16:15.312423+00:00"
+  "corpus_commit": "9f6686497fb699a0327ad800efe77f5055ddfd92",
+  "input_sha256": "cc1caa1ea14142a5be04347d2a5a089e99f8e9501ca2f3d8c102f73d15f15c38",
+  "embeddings_sha256": "4557cf8cb88c219a10f70c5a43d979de4fb1ad9000504991c43b3646b9454a54",
+  "cids_sha256": "f1a20639e890b9e6d5b0bb5743041f6f7a57dd901826ba426e61d1d15f4a0101",
+  "generated_at": "2026-07-12T07:59:28.963303+00:00"
 }
