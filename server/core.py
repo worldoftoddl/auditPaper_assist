@@ -22,7 +22,11 @@ from normalize_corpus import gloss_norm  # noqa: E402
 
 CODE_TO_TYPE = {v: k for k, v in TYPE_CODE.items()}
 SOURCE_TYPES = set(TYPE_CODE)
-PARA_TYPES = {"정의", "참조", "부록", "요구사항", "적용지침", "본문"}
+PARA_TYPES = {"정의", "참조", "부록", "요구사항", "적용지침", "본문", "결론도출근거", "적용사례"}
+# 검색 기본 노출 옵트인 2축 (규약 2.2, 4차 개정): include_examples = 예시류,
+# include_bc = 근거·연혁. para_type 명시 요청은 옵트아웃보다 우선 (D-18 일반화)
+EXAMPLE_TYPES = {"부록", "적용사례"}
+BC_TYPES = {"결론도출근거"}
 FUSION_DESC = "server-RRF (dense+sparse, prefetch 각 50)"
 PREFETCH_LIMIT = 50
 REF_NOTE = "발췌 대조표 — 원전 문단 우선 인용"
@@ -122,11 +126,13 @@ class Gateway:
             notes.append(note)
         paragraphs = [target]
         if context:
-            # 이웃 문단: 같은 기준서에서 seq ±context 범위 조회 (분할 조각은 seq 공유)
+            # 이웃 문단: 같은 원본 파일에서 seq ±context 범위 조회 (분할 조각은 seq 공유).
+            # 스코프가 기준서가 아닌 source_file인 이유(규약 2.2, 4차 개정): 한 기준서가
+            # 정본·BC·IE 여러 파일로 나뉘어 seq가 파일마다 1부터 시작 — 기준서 스코프로
+            # 조회하면 정본 문단 옆에 갈래 문단이 끼어든다.
             from qdrant_client import models as qm
             flt = qm.Filter(must=[
-                qm.FieldCondition(key="source_type", match=qm.MatchValue(value=target["source_type"])),
-                qm.FieldCondition(key="standard_no", match=qm.MatchValue(value=target["standard_no"])),
+                qm.FieldCondition(key="source_file", match=qm.MatchValue(value=recs[0]["source_file"])),
                 qm.FieldCondition(key="seq", range=qm.Range(gte=target["seq"] - context,
                                                             lte=target["seq"] + context))])
             pts, _ = self.client.scroll(COLLECTION, scroll_filter=flt, limit=64, with_payload=True)
@@ -159,7 +165,7 @@ class Gateway:
                 seen.add(t)
         return sorted(idx), oov
 
-    def _build_filter(self, standard_no, source_type, para_type, exclude_appendix):
+    def _build_filter(self, standard_no, source_type, para_type, exclude_types=()):
         from qdrant_client import models as qm
         must, must_not = [], []
         if standard_no:
@@ -168,8 +174,9 @@ class Gateway:
             must.append(qm.FieldCondition(key="source_type", match=qm.MatchAny(any=list(source_type))))
         if para_type:
             must.append(qm.FieldCondition(key="para_type", match=qm.MatchValue(value=para_type)))
-        if exclude_appendix:
-            must_not.append(qm.FieldCondition(key="para_type", match=qm.MatchValue(value="부록")))
+        if exclude_types:
+            must_not.append(qm.FieldCondition(
+                key="para_type", match=qm.MatchAny(any=sorted(exclude_types))))
         if not must and not must_not:
             return None
         return qm.Filter(must=must or None, must_not=must_not or None)
@@ -186,7 +193,7 @@ class Gateway:
             limit=limit, with_payload=True).points
 
     def search(self, query, standard_no=None, source_type=None, para_type=None,
-               top_k=8, include_examples=False):
+               top_k=8, include_examples=False, include_bc=False):
         if not query or not 1 <= len(query) <= 500:
             return err("INVALID_INPUT", f"query 길이 {len(query or '')}", "1~500자로 지정")
         if not 1 <= top_k <= 20:
@@ -198,28 +205,42 @@ class Gateway:
             return err("INVALID_INPUT", f"para_type 미지원: '{para_type}'",
                        f"허용값: {sorted(PARA_TYPES)}")
         applied_notes = []
-        # 명시적 para_type='부록' 요청은 옵트인과 모순 — 명시 요청을 우선한다
-        exclude = (not include_examples) and para_type != "부록"
-        if para_type == "부록" and not include_examples:
-            applied_notes.append("para_type='부록' 명시 요청 — include_examples 옵트아웃보다 우선 적용")
+        # 옵트인 2축: 기본 검색은 정본만 — 예시류(부록·적용사례)는 include_examples,
+        # 결론도출근거는 include_bc. 명시적 para_type 요청은 옵트아웃보다 우선한다.
+        exclude_types = set()
+        if not include_examples:
+            exclude_types |= EXAMPLE_TYPES
+        if not include_bc:
+            exclude_types |= BC_TYPES
+        if para_type in exclude_types:
+            exclude_types.discard(para_type)
+            applied_notes.append(
+                f"para_type='{para_type}' 명시 요청 — 옵트아웃보다 우선 적용")
 
         dense_vec = self.encoder.encode([query], normalize_embeddings=True)[0].tolist()
         sparse_idx, oov = self._sparse_query(query)
         if not sparse_idx:
             applied_notes.append("sparse 질의 토큰 전무(전부 어휘집 밖) — dense 단독 검색")
 
-        flt = self._build_filter(standard_no, source_type, para_type, exclude)
+        flt = self._build_filter(standard_no, source_type, para_type, exclude_types)
         points = self._fused_query(dense_vec, sparse_idx, flt, top_k + 3)  # 분할 중복 여유분
 
-        examples_excluded = 0
-        if exclude:
-            base_flt = self._build_filter(standard_no, source_type, para_type, False)
+        examples_excluded = bc_excluded = 0
+        if exclude_types:
+            base_flt = self._build_filter(standard_no, source_type, para_type, ())
             base_pts = self._fused_query(dense_vec, sparse_idx, base_flt, top_k)
-            examples_excluded = sum(1 for p in base_pts if p.payload["para_type"] == "부록")
+            excl = Counter(p.payload["para_type"] for p in base_pts
+                           if p.payload["para_type"] in exclude_types)
+            examples_excluded = sum(excl[t] for t in EXAMPLE_TYPES)
+            bc_excluded = sum(excl[t] for t in BC_TYPES)
             if examples_excluded:
                 applied_notes.append(
-                    f"예시류(부록) {examples_excluded}건 제외 — 문안·예시 작업이면 "
+                    f"예시류(부록·적용사례) {examples_excluded}건 제외 — 문안·예시 작업이면 "
                     "include_examples=true로 재호출")
+            if bc_excluded:
+                applied_notes.append(
+                    f"결론도출근거 {bc_excluded}건 제외 — 기준 제정 근거·연혁 질의면 "
+                    "include_bc=true로 재호출")
 
         results, seen = [], set()
         for p in points:
@@ -251,7 +272,8 @@ class Gateway:
         return {"results": results, "definitions": definitions,
                 "applied": {"filters": filters_echo, "fusion": FUSION_DESC,
                             "oov_query_tokens": oov,
-                            "examples_excluded": examples_excluded, "notes": applied_notes}}
+                            "examples_excluded": examples_excluded,
+                            "bc_excluded": bc_excluded, "notes": applied_notes}}
 
     def _inject_definitions(self, query, results, filter_stds):
         """정의 주입 (지시서 5.2): 질의 어휘 일치 최우선 → 결과 텍스트 빈도순, 캡 5.

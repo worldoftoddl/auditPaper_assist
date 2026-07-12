@@ -118,3 +118,45 @@ def test_a10_fragment_id_rejected(ctx):
     out = ctx.gw.get_paragraph("KSA::240::부록1#1")
     assert out["error"]["code"] == "INVALID_INPUT"
     assert "논리 ID" in out["error"]["hint"]
+
+
+# ── A11: BC(결론도출근거) 옵트인 양방향 (규약 4.3-5·include_bc) ──
+def test_a11_bc_opt_in(ctx):
+    off = ctx.gw.search("리스 인식 면제 결론도출근거", standard_no=["1116"], top_k=8)
+    assert all(r["para_type"] != "결론도출근거" for r in off["results"]), \
+        [(r["cid"], r["para_type"]) for r in off["results"]]
+    assert off["applied"]["bc_excluded"] > 0
+    assert any("include_bc=true" in n for n in off["applied"]["notes"])
+    on = ctx.gw.search("리스 인식 면제 결론도출근거", standard_no=["1116"],
+                       include_bc=True, top_k=8)
+    assert any(r["cid"].startswith("KIFRS::1116::BC") for r in on["results"]), \
+        [r["cid"] for r in on["results"]]
+
+
+# ── A12: IE(적용사례)가 include_examples 축에 편입 ──
+def test_a12_ie_opt_in(ctx):
+    on = ctx.gw.search("계약변경 재화 회계처리 사례", standard_no=["1115"],
+                       include_examples=True, top_k=8)
+    assert any(r["para_type"] == "적용사례" for r in on["results"]), \
+        [(r["cid"], r["para_type"]) for r in on["results"]]
+    off = ctx.gw.search("계약변경 재화 회계처리 사례", standard_no=["1115"], top_k=8)
+    assert all(r["para_type"] not in ("부록", "적용사례") for r in off["results"])
+
+
+# ── A13: BC·IE 직조회 + 이웃의 갈래 순수성 (source_file 스코프, 규약 2.2) ──
+def test_a13_galley_get_paragraph_context(ctx):
+    out = ctx.gw.get_paragraph("KIFRS::1115::IE3", context=2)
+    assert out["found"]
+    assert all(p["para_type"] == "적용사례" for p in out["paragraphs"]), \
+        [(p["cid"], p["para_type"]) for p in out["paragraphs"]]
+    # 역방향: 정본 이웃 조회가 갈래 문단에 오염되지 않아야 한다
+    out2 = ctx.gw.get_paragraph("KIFRS::1115::31", context=2)
+    assert all(p["para_type"] not in ("결론도출근거", "적용사례")
+               for p in out2["paragraphs"])
+
+
+# ── A14: para_type 명시 요청이 옵트아웃보다 우선 (D-18 일반화) ──
+def test_a14_explicit_para_type_overrides_optout(ctx):
+    out = ctx.gw.search("금융부채 분류 근거", para_type="결론도출근거", top_k=5)
+    assert out["results"] and all(r["para_type"] == "결론도출근거" for r in out["results"])
+    assert any("명시 요청" in n for n in out["applied"]["notes"])

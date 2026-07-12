@@ -62,10 +62,12 @@ def build_app(auth=None):
     @mcp.tool(annotations=ANNOTATIONS)
     def standards_get_paragraph(
         cid: Annotated[str, Field(description="복합 ID(논리), '#순번' 없이. 예: KIFRS::1115::31")],
-        context: Annotated[int, Field(0, ge=0, le=3, description="같은 기준서 seq ±N 이웃 문단 포함(0~3)")] = 0,
+        context: Annotated[int, Field(0, ge=0, le=3, description="같은 원본 문서 seq ±N 이웃 문단 포함(0~3)")] = 0,
     ) -> dict:
         """기준서 문단 직조회·인용 검증. 복합 ID로 원문 실물을 확인하고, 분할 문단은
-        재조립해 돌려준다. context=N이면 같은 기준서의 이웃 문단(seq ±N)을 함께 반환한다.
+        재조립해 돌려준다. context=N이면 같은 원본 문서의 이웃 문단(seq ±N)을 함께 반환한다
+        (정본·결론도출근거·적용사례는 서로 다른 문서로 취급 — 이웃이 섞이지 않음).
+        BC·IE 문단도 논리 ID로 직조회 가능(예: KIFRS::1116::BC1, KIFRS::1115::IE3).
         해석 보고서의 인용 cid 검증(제출 전 최소 3건 재조회)에 이 도구를 사용할 것."""
         return _guard(_gateway.get_paragraph, cid, context)
 
@@ -77,21 +79,26 @@ def build_app(auth=None):
         source_type: Annotated[Optional[list[str]], Field(
             description="감사기준 | 회계기준 | 실무지침")] = None,
         para_type: Annotated[Optional[str], Field(
-            description="문단 성격 필터: 정의·참조·부록·요구사항·적용지침·본문")] = None,
+            description="문단 성격 필터: 정의·참조·부록·요구사항·적용지침·본문·결론도출근거·적용사례")] = None,
         top_k: Annotated[int, Field(8, ge=1, le=20)] = 8,
         include_examples: Annotated[bool, Field(
-            False, description="예시류(부록) 포함 스위치 — 문안·예시 작성 작업이면 true")] = False,
+            False, description="예시류(부록·적용사례) 포함 스위치 — 문안·예시·회계처리 사례 작업이면 true")] = False,
+        include_bc: Annotated[bool, Field(
+            False, description="결론도출근거(BC) 포함 스위치 — 기준 제정 근거·연혁·논리구축 질의면 true")] = False,
     ) -> dict:
         """기준서 하이브리드 검색(dense+sparse, 서버 RRF) + 관련 용어 정의 주입.
-        기본적으로 예시류(부록)는 제외된다 — 감사보고서 문안·예시가 필요하면
-        include_examples=true. 히트 문단의 이웃 확장은 이 도구가 아니라
+        기본 검색은 정본만 — 비정본 첨부물은 옵트인 2축으로 노출한다:
+        예시류(부록·적용사례)는 include_examples=true(감사보고서 문안·회계처리 예시),
+        결론도출근거(BC)는 include_bc=true(기준 제정 근거·연혁 — 논리구축 자료).
+        para_type을 명시하면 해당 유형은 옵트아웃과 무관하게 노출된다.
+        히트 문단의 이웃 확장은 이 도구가 아니라
         standards_get_paragraph(cid, context=N)을 사용할 것."""
         if not _encoder_ready.wait(timeout=ENCODER_WAIT_SEC):
             return _wrap({"error": {"code": "UPSTREAM_UNAVAILABLE",
                                     "message": "질의측 인코더(bge-m3) 로드가 아직 끝나지 않음",
                                     "hint": "잠시 후 재시도 — 기동 직후 1분 내 정상화"}})
         return _guard(_gateway.search, query, standard_no, source_type,
-                      para_type, top_k, include_examples)
+                      para_type, top_k, include_examples, include_bc)
 
     @mcp.tool(annotations=ANNOTATIONS)
     def standards_define_terms(

@@ -27,9 +27,12 @@ ISQM_ROWS_JSON = Path(__file__).resolve().parent / "isqm1_rows.json"
 # 부록-사례N: 감사기준 예시 보고서의 사례 단위 가상 번호 (규약 4.3)
 # 사례[A-Z]: 실무서2(PS2)의 사례 상자 A~T / 참조N: PS2 부록 '개념체계와 기준서 참조' 발췌 단위
 # 정의-{용어}: 부록 A 용어정의 표의 행(용어) 단위 조각 (규약 4.3 용어집 갈래, 수정 8)
-# 한?[A-Z]{0,4}\.?\d: BA.1(1109 부록 B 말미) 같은 '영문자+점+숫자' 계열 포함
+# IE사례N-*/IE부록X-*/IE부록N/BC-*: 비정본 첨부물(BC·IE) 갈래의 합성 번호 (규약 4.3 다섯째 갈래)
+# 한?[A-Z]{0,4}\.?\d: BA.1(1109 부록 B 말미) 같은 '영문자+점+숫자' 계열 포함 (BC1·IE3도 이 계열)
 HEAD_RE = re.compile(
-    r"^(부록-사례\d+|부록-?[0-9A-Za-z()]+|보론\d*-\d+|사례[A-Z]|참조\d+|정의-[가-힣A-Za-z0-9()·-]+|한?[A-Z]{0,4}\.?\d[0-9A-Za-z.-]*)\.\s"
+    r"^(부록-사례\d+|부록-?[0-9A-Za-z()]+|보론\d*-\d+|사례[A-Z]|참조\d+|정의-[가-힣A-Za-z0-9()·-]+"
+    r"|IE사례\d+-[0-9A-Za-z.]+|IE부록[A-Z]-\d[0-9A-Za-z.]*|IE부록\d+|BC부록\d+|BC-[0-9A-Za-z.]+"
+    r"|한?[A-Z]{0,4}\.?\d[0-9A-Za-z.-]*)\.\s"
 )
 
 # 원본에 para 주석 없이 놓인 정본 문단의 무마침표 행머리 (예: 'A1<TAB>본문', 'D1 ', 'BA.1')
@@ -39,6 +42,32 @@ SERIES_START = re.compile(r"한?[A-Z]{1,4}\.?1")
 # 의결 문구(위원 명단·의결 사실 기재)는 정본 문단이 아니므로 제거
 BOILER_HEAD = re.compile(r"^회계기준위원회 위원\s*:")
 BOILER_VOTE = re.compile(r"회계기준위원회\S*\s*위원\s*\d+인.*의결하였다")
+
+# ── BC·IE 갈래 (규약 4.3 다섯째 갈래) ────────────────────────────────
+# 구역 상투문(제공 갈음 안내·비정본 선언·제목 반복)은 조각 본문이 아니므로 제거
+Z_BOILER = [
+    re.compile(r"^\*{0,2}한국회계기준원은 한국채택국제회계기준 제정시"),
+    re.compile(r"^\*{0,2}다만,\s*한국회계기준원이"),
+    re.compile(r"^\*이\s*(결론도출근거|적용사례|실무적용지침)"),
+    re.compile(r"^\*\*(결론도출근거|적용사례|실무적용지침)\*\*$"),
+    re.compile(r"^[·•]?\s*실무적용지침\s*$"),
+    re.compile(r"^\*\*(기업회계기준서?|국제회계기준|한국채택국제회계기준|K-IFRS|IFRS|IAS|SIC|IFRIC).{0,70}\*\*$"),
+]
+# 구역 내부의 볼드 사례 헤더 (예: '**사례 5: 계약변경―재화**') — section_path 세그먼트로 편입
+Z_CASE_BOLD = re.compile(r"^\*\*\s*(사례\s*\d+[^*]*?)\s*\*\*$")
+# 합성 대상 원번호: 정수·소수점 계열(1, 1.2)과 부록 문자 계열(A1, B36, C9A)
+Z_NUM = re.compile(r"^\d+[0-9A-Za-z.]*$")
+Z_APPX = re.compile(r"^([A-Z])(\d+[A-Z]?)$")
+Z_SECT_APPX = re.compile(r"^부록\s*([A-Z])\b")
+# 갈래 내 무주석 문단머리 폴백 (BC1<TAB>본문 / IE3<TAB>본문 / IG2<TAB>본문 — para 주석이
+# 안 따라올 때만). IG = 실무적용지침(Implementation Guidance) 원번호 — 1001·1101·1102·
+# 1107·1108의 IE 구역이 para 주석 없이 IG 리터럴 행머리만 갖는다.
+# BC[A-Z]{0,2}\.? — 1109 결론도출근거의 BCE.238·BCG.1 같은 파생 계열(주석 일부 부재)
+Z_HEAD_FALLBACK = re.compile(r"^(?:\*\*)?((?:BC[A-Z]{0,2}\.?|IE|IG)\d[0-9A-Za-z.]*)[ \t]+(\S.*)$")
+# 부록 문자 계열 리터럴 행머리 (1034 부록 A의 'A1<TAB>본문' — 절 제목 문자와 일치할 때만)
+Z_APPX_HEAD = re.compile(r"^([A-Z])(\d+[A-Z]?)[\t ]+(\S.*)$")
+# 갈래 내 리터럴 점번호 머리 (1008 '1.1.<TAB>본문' — 사례 스코프 합성 대상)
+Z_DOTTED_HEAD = re.compile(r"^(\d+\.\d+)[.．][\t ]+(\S.*)$")
 
 # ── 부록 A 용어정의(용어집 갈래, 수정 8) ─────────────────────────────
 # 앵커: '**부록 A**'형 굵은 제목 + "용어의 정의" + 정본 선언문의 근접 출현 (제목 표기가 파일마다 다름)
@@ -579,9 +608,85 @@ def convert_ifrs_file(path, expected):
     in_toc_table = False
     h2 = h3 = None
     last_content_idx = None  # em.lines에서 마지막 본문 행 위치
-    dropped_warn = []
     promoted = []      # para 주석 없이 행머리 패턴으로 승격한 문단 (검수 보고용)
     n_boiler = 0
+
+    # BC·IE 갈래 상태 (규약 4.3 다섯째 갈래) — 정본 배제 래치(bc_seen/ie_seen)와 별개로,
+    # 구역 내용을 별도 Emitter에 담아 kifrs_{토큰}_bc.md / _ie.md 로 낸다. C-07 원칙 승계:
+    # 구역 내 component/authority 태그는 갈래 소속 판정에 쓰지 않는다(h2 래치만 신뢰).
+    z_em = {"bc": Emitter(), "ie": Emitter()}
+    zone = None              # 현재 구역: None | 'bc' | 'ie'  (h2 도달마다 갱신)
+    z_base = {"bc": "결론도출근거", "ie": "적용사례"}
+    z_h2 = z_h3 = z_case = None   # 구역 내부 절 구조 (사례 볼드 헤더 포함)
+    z_scope = 0              # 합성 ID의 사례 스코프 (내부 절 헤더마다 증가, 사례N은 N에 정렬)
+    z_last_idx = {"bc": None, "ie": None}  # 구역별 마지막 본문 행 (para 주석 승격용)
+    z_chunk = 0              # 무주석 구역의 절 조각 순번 (IE부록N)
+    z_pending = None         # 무주석 구역의 대기 조각 ID
+    z_toc = False            # 구역 내 목차 표 제거
+    z_unmapped = []          # 합성 불가로 승격을 건너뛴 para (검수 보고용)
+
+    # 프리스캔: 각 구역에 para 주석이 존재하는가(없으면 절 단위 조각 모드) +
+    # 고유 번호 체계(BC/IE/IG)를 갖는가(있으면 잔여 정수는 표 각주 후보 — 1036)
+    z_has_para = {"bc": False, "ie": False}
+    z_native = {"bc": False, "ie": False}
+    if not is_cf:
+        zz = None
+        for ln in lines:
+            cc = parse_comment(ln)
+            if cc is not None:
+                if zz and "para" in cc:
+                    z_has_para[zz] = True
+                    if str(cc["para"]).startswith(("BC", "IE", "IG")):
+                        z_native[zz] = True
+                continue
+            hh = re.match(r"##\s+(.*)", ln)
+            if hh:
+                tt = hh.group(1).strip()
+                if tt.startswith("결론도출근거"):
+                    zz = "bc"
+                elif tt.startswith("적용사례"):
+                    zz = "ie"
+
+    def z_sect():
+        parts = [z_base[zone]]
+        if z_h2:
+            parts.append(z_h2)
+        if z_h3:
+            parts.append(z_h3)
+        if z_case:
+            parts.append(z_case)
+        z_em[zone].set_section(" > ".join(parts))
+
+    z_syn_last = [None]   # 직전 합성 원번호 튜플 — 헤더 없는 번호 재시작(역행) 감지용
+    z_syn_warn = []       # 역행 자동 스코프 증가 기록 (검수 보고용)
+    z_footnote = []       # 표 각주로 판별해 이어행으로 남긴 정수 para (검수 보고용)
+    z_fn_run = False      # 각주 연속 구간 (표 뒤 각주 1,2,3…이 줄지어 오는 경우)
+
+    def z_synth(p):
+        """구역 para의 방출 번호 합성. None 반환 = 승격하지 않음(이어행으로 남김)."""
+        nonlocal z_scope
+        if p.startswith(("BC", "IE", "IG")):
+            return p
+        if p.startswith("CU"):
+            return None  # 화폐단위 예시 표기 — 문단번호 아님
+        if zone == "bc":
+            # 정수(2032 등 구식 무접두)와 문자 계열(1040·1041의 B1~ — 구식 BC 원번호)
+            return f"BC-{p}" if Z_NUM.match(p) or Z_APPX.match(p) else None
+        am = Z_APPX.match(p)
+        if am:  # 1034 부록 A/B/C의 A1·B36·C9 — 부록 문자 계열
+            return f"IE부록{am.group(1)}-{am.group(2)}"
+        if Z_NUM.match(p):
+            sm = Z_SECT_APPX.match(z_h2 or "")
+            if sm:  # 1007 부록 A/B/C 아래의 재시작 정수
+                return f"IE부록{sm.group(1)}-{p}"
+            # 절 헤더 없는 번호 재시작(역행) → 사례 스코프 자동 증가 (1012·1036)
+            tup = tuple(int(x) for x in re.findall(r"\d+", p))
+            if z_syn_last[0] is not None and tup <= z_syn_last[0]:
+                z_scope += 1
+                z_syn_warn.append(f"사례{z_scope}@{p}")
+            z_syn_last[0] = tup
+            return f"IE사례{max(z_scope, 1)}-{p}"
+        return None
     ps2_app = False    # PS2 부록(개념체계와 기준서 참조) 구역
     ref_n = 0          # 참조N 순번 (PS2 부록 발췌 단위 / 부록 A의 타 기준서 참조 블록)
     gloss = False          # 부록 A 용어집 구역 (수정 8)
@@ -614,9 +719,40 @@ def convert_ifrs_file(path, expected):
             elif "authority_declaration" in c and not is_cf:
                 # 원본이 부록 서두에 스스로 선언한 정본 여부 — component 태그와 동급으로 반영
                 comp_include = c["authority_declaration"] == "authoritative"
-            elif "para" in c and not include and (bc_seen or ie_seen):
-                if not str(c["para"]).startswith(("BC", "IE", "CU")):
-                    dropped_warn.append(c["para"])
+            elif "para" in c and zone is not None and not is_cf:
+                # BC·IE 갈래 승격: 직전 본문 행을 합성 번호 문단으로 (정본 승격 메커니즘과 동형)
+                if z_last_idx[zone] is not None:
+                    p = str(c["para"])
+                    # 고유 번호(BC/IE/IG) 파일의 잔여 정수가 표 바로 뒤에 오면 표 각주다
+                    # (1036 — '1 경영진의 예산에 반영된 … 제외한다'). 각주는 1,2,3…으로
+                    # 줄지어 오기도 하므로(z_fn_run) 연속 구간 전체를 이어행으로 남긴다.
+                    if Z_NUM.match(p) and z_native[zone]:
+                        prev = next((l for l in reversed(
+                            z_em[zone].lines[:z_last_idx[zone]]) if l.strip()), "")
+                        if prev.lstrip("\t").startswith("|") or z_fn_run:
+                            z_footnote.append(p)
+                            z_fn_run = True
+                            z_last_idx[zone] = None
+                            continue
+                    z_fn_run = False
+                    head = z_synth(p)
+                    if head is None:
+                        if not p.startswith("CU"):
+                            z_unmapped.append(p)
+                    else:
+                        zem = z_em[zone]
+                        raw = zem.lines[z_last_idx[zone]]
+                        stripped = raw.lstrip("\t")
+                        bold = stripped.startswith("**")
+                        if bold:
+                            stripped = stripped[2:]
+                        m = re.match(re.escape(p) + r"[.．]?[\t ]+", stripped)
+                        rest = stripped[m.end():] if m else stripped
+                        zem.lines[z_last_idx[zone]] = (
+                            f"{head}.\t" + ("**" + rest if bold else rest)
+                        ).rstrip()
+                        zem.paras.append(head)
+                    z_last_idx[zone] = None
             elif "para" in c and include and last_content_idx is not None:
                 para = c["para"]
                 raw = em.lines[last_content_idx]
@@ -655,9 +791,119 @@ def convert_ifrs_file(path, expected):
             else:
                 h3 = t
             em.set_section(h2 if not h3 else f"{h2} > {h3}")
+            # BC·IE 갈래의 구역 전환·내부 절 추적 (정본 래치와 별개)
+            if not is_cf:
+                if lvl == 2 and t.startswith("결론도출근거"):
+                    zone = "bc"
+                    z_h2 = z_h3 = z_case = None
+                    z_scope = 0
+                    z_pending = None
+                    z_last_idx["bc"] = None
+                    z_sect()
+                elif lvl == 2 and t.startswith("적용사례"):
+                    zone = "ie"
+                    z_h2 = z_h3 = z_case = None
+                    z_scope = 0
+                    z_pending = None
+                    z_last_idx["ie"] = None
+                    z_sect()
+                elif zone is not None:
+                    if lvl == 2:
+                        z_h2, z_h3, z_case = t, None, None
+                    else:
+                        z_h3, z_case = t, None
+                    sm = re.search(r"사례\s*(\d+)", t)
+                    z_scope = int(sm.group(1)) if sm else z_scope + 1
+                    z_syn_last[0] = None
+                    z_fn_run = False
+                    z_last_idx[zone] = None
+                    if not z_has_para[zone]:  # 무주석 구역: 절 경계 = 새 조각
+                        z_chunk += 1
+                        z_pending = ("IE부록" if zone == "ie" else "BC부록") + str(z_chunk)
+                    z_sect()
             continue
 
         if not include or not body_started:
+            # ── BC·IE 갈래 내용 라우팅 ── (구역 밖의 배제 행은 종전대로 버림)
+            if zone is not None and not is_cf:
+                zs = ln.rstrip()
+                zt = zs.strip()
+                zem = z_em[zone]
+                if not zt:
+                    z_toc = False
+                    continue
+                # 볼드 사례 헤더 → section_path 세그먼트 (para 주석이 따라오면 본문으로 취급)
+                zcm = Z_CASE_BOLD.match(zt)
+                if zcm and not follows_para[i]:
+                    z_case = zcm.group(1).strip()
+                    sm = re.search(r"사례\s*(\d+)", z_case)
+                    z_scope = int(sm.group(1)) if sm else z_scope + 1
+                    z_syn_last[0] = None
+                    z_last_idx[zone] = None
+                    if not z_has_para[zone]:
+                        z_chunk += 1
+                        z_pending = ("IE부록" if zone == "ie" else "BC부록") + str(z_chunk)
+                    z_sect()
+                    continue
+                # 상투문(갈음 안내·비정본 선언·제목 반복)·목차 표 제거
+                if any(b.match(zt) for b in Z_BOILER) and not follows_para[i]:
+                    continue
+                if zt.startswith("|") and re.search(r"목\s*차", zt):
+                    z_toc = True
+                    continue
+                if z_toc and zt.startswith("|"):
+                    continue
+                z_toc = False
+                if not z_has_para[zone]:
+                    # 무주석 구역: IG/BC/IE 리터럴 행머리는 원번호 문단으로 승격,
+                    # 그 밖은 절 단위 조각(IE부록N) 모드 — 규약 4.3-5 ③
+                    fb = Z_HEAD_FALLBACK.match(zt)
+                    if fb:
+                        head = fb.group(1).rstrip(".")
+                        bold = zt.startswith("**")
+                        zem.para(head + ".", ("**" if bold else "") + fb.group(2))
+                        z_pending = None
+                        continue
+                    if z_pending is None and not zem.paras:
+                        z_chunk += 1
+                        z_pending = ("IE부록" if zone == "ie" else "BC부록") + str(z_chunk)
+                    if z_pending is not None:
+                        zem.para(z_pending + ".", zt)
+                        z_pending = None
+                    else:
+                        zem.cont(zs if zs.startswith(("\t", " ", "|", ">")) else zt)
+                    continue
+                # para 주석 구역: 무주석 행머리 폴백 (계열 연속성 검사)
+                if not follows_para[i]:
+                    fb = Z_HEAD_FALLBACK.match(zt)
+                    if fb:
+                        head = fb.group(1).rstrip(".")
+                        if head in ("BC1", "IE1", "IG1") or (
+                                zem.paras and zem.paras[-1][:2] == head[:2]):
+                            bold = zt.startswith("**")
+                            zem.para(head + ".", ("**" if bold else "") + fb.group(2))
+                            z_last_idx[zone] = None
+                            continue
+                    if zone == "ie":
+                        dt = Z_DOTTED_HEAD.match(zt)
+                        if dt:  # 1008 '1.1.' 리터럴 점번호 — 사례 스코프 합성
+                            zem.para(z_synth(dt.group(1)) + ".", dt.group(2))
+                            z_last_idx[zone] = None
+                            continue
+                        ah = Z_APPX_HEAD.match(zt)
+                        sm2 = Z_SECT_APPX.match(z_h2 or "")
+                        if ah and sm2 and ah.group(1) == sm2.group(1):
+                            # 1034 부록 A의 무주석 A1·A2 — 절 제목 문자와 일치할 때만 승격
+                            zem.para(f"IE부록{ah.group(1)}-{ah.group(2)}.", ah.group(3))
+                            z_last_idx[zone] = None
+                            continue
+                    if not zem.paras:
+                        continue  # 첫 문단 이전의 서두 잔여물(표지 표 등)은 버림
+                out = zs if zs.startswith(("\t", " ", "|", ">")) else zt
+                if NOPD_OUT.match(out):
+                    out = "\t" + out  # 무마침표 행머리 오인 방지 (이어행 표식)
+                zem.cont(out)
+                z_last_idx[zone] = len(zem.lines) - 1
             continue
         s = ln.rstrip()
         if not s.strip():
@@ -779,8 +1025,12 @@ def convert_ifrs_file(path, expected):
         em.cont(s if s.startswith(("\t", " ", "|", ">")) else s.strip())
         last_content_idx = len(em.lines) - 1
 
-    if dropped_warn:
-        print(f"  [경고] {path.name[:40]}: 결론도출근거/적용사례 이후 비BC·IE 문단 제외됨 {dropped_warn[:8]}")
+    if z_unmapped:
+        print(f"  [경고] kifrs_{token}: BC/IE 구역 내 합성 불가 para {len(z_unmapped)}건 {z_unmapped[:8]}")
+    if z_syn_warn:
+        print(f"  [합성] kifrs_{token}: 헤더 없는 번호 재시작 → 스코프 자동 증가 {len(z_syn_warn)}건 {z_syn_warn[:6]}")
+    if z_footnote:
+        print(f"  [각주] kifrs_{token}: BC/IE 구역 표 각주 {len(z_footnote)}건 이어행 유지 {z_footnote[:8]}")
     if promoted:
         print(f"  [복원] kifrs_{token}: 무주석 문단 {len(promoted)}개 승격 — {promoted[:6]}{'…' if len(promoted) > 6 else ''}")
     write_output(
@@ -790,6 +1040,16 @@ def convert_ifrs_file(path, expected):
          ("origin", str(path.relative_to(ROOT)))],
         em, expected,
     )
+    # BC·IE 갈래 파일 (규약 4.3-5·4.4) — 정본 파일과 분리 방출이 정본 불변 게이트의 전제
+    for zk, suffix, label in (("bc", "_bc", "결론도출근거"), ("ie", "_ie", "적용사례")):
+        if z_em[zk].paras:
+            write_output(
+                f"kifrs_{token}{suffix}.md",
+                [("source_type", "회계기준"), ("standard_no", std_no),
+                 ("standard_title", title),
+                 ("origin", f"{path.relative_to(ROOT)} ({label} 갈래 — 규약 4.3-5)")],
+                z_em[zk], expected,
+            )
 
 
 # ══════════════════════════════ 검증 ══════════════════════════════
@@ -841,6 +1101,118 @@ PS2_EXPECT = {
 # 6,000자 초과 잔존 허용 문단 — 이 1건(통짜 목록)으로 수렴해야 완료
 # (수정 8: ksa_1200 부록1은 정의-{용어} 65개로 분해되어 목록에서 제외)
 WARN_ALLOW = {("ksa_240.md", "부록1")}
+
+# BC·IE 갈래 파일 판별 — 6,000자 검사는 경고만 (분할은 적재기 SPLIT_TARGETS + 토크나이저
+# 전수 검사가 담당 — 원문 장문 비중이 높아 파일 단위 허용목록이 실익 없음)
+GALLEY_RE = re.compile(r"_(bc|ie)\.md$")
+
+# BC·IE 갈래 파일별 기대 문단 수 — 최초 산출(2026-07-12)을 고정 (GLOSS_EXPECT 전례).
+# 비어 있으면 검사 생략(최초 생성 모드), 채워지면 등록 외 갈래 파일·수 불일치 모두 실패.
+# 검산 근거: 원본 인벤토리(para 주석 BC 7,849 + 폴백 승격분)와 파일별 대조 — 1115_bc 652·
+# 1117_bc 573·1102_bc 458(주석 수와 정확 일치), 1109_bc 1,605(주석 1,312 + BCE/BCZ 계열
+# 폴백 승격 293), IE 합계 1,752 (주석 1,399 + IG 승격 + 합성 - 각주 10)
+BCIE_EXPECT = {
+    "kifrs_1001_bc.md": 234,
+    "kifrs_1002_bc.md": 23,
+    "kifrs_1007_bc.md": 46,
+    "kifrs_1008_bc.md": 60,
+    "kifrs_1010_bc.md": 5,
+    "kifrs_1012_bc.md": 118,
+    "kifrs_1016_bc.md": 164,
+    "kifrs_1019_bc.md": 314,
+    "kifrs_1020_bc.md": 5,
+    "kifrs_1021_bc.md": 71,
+    "kifrs_1023_bc.md": 33,
+    "kifrs_1024_bc.md": 52,
+    "kifrs_1027_bc.md": 42,
+    "kifrs_1028_bc.md": 84,
+    "kifrs_1029_bc.md": 2,
+    "kifrs_1032_bc.md": 124,
+    "kifrs_1033_bc.md": 15,
+    "kifrs_1034_bc.md": 12,
+    "kifrs_1036_bc.md": 263,
+    "kifrs_1037_bc.md": 21,
+    "kifrs_1038_bc.md": 138,
+    "kifrs_1039_bc.md": 285,
+    "kifrs_1040_bc.md": 90,
+    "kifrs_1041_bc.md": 98,
+    "kifrs_1101_bc.md": 175,
+    "kifrs_1102_bc.md": 458,
+    "kifrs_1103_bc.md": 509,
+    "kifrs_1105_bc.md": 109,
+    "kifrs_1106_bc.md": 69,
+    "kifrs_1107_bc.md": 289,
+    "kifrs_1108_bc.md": 66,
+    "kifrs_1109_bc.md": 1743,
+    "kifrs_1110_bc.md": 337,
+    "kifrs_1111_bc.md": 99,
+    "kifrs_1112_bc.md": 149,
+    "kifrs_1113_bc.md": 248,
+    "kifrs_1114_bc.md": 79,
+    "kifrs_1115_bc.md": 652,
+    "kifrs_1116_bc.md": 340,
+    "kifrs_1117_bc.md": 573,
+    "kifrs_2010_bc.md": 1,
+    "kifrs_2025_bc.md": 5,
+    "kifrs_2029_bc.md": 3,
+    "kifrs_2032_bc.md": 9,
+    "kifrs_2101_bc.md": 33,
+    "kifrs_2102_bc.md": 25,
+    "kifrs_2105_bc.md": 28,
+    "kifrs_2106_bc.md": 10,
+    "kifrs_2107_bc.md": 25,
+    "kifrs_2110_bc.md": 12,
+    "kifrs_2112_bc.md": 77,
+    "kifrs_2114_bc.md": 44,
+    "kifrs_2116_bc.md": 45,
+    "kifrs_2117_bc.md": 66,
+    "kifrs_2119_bc.md": 34,
+    "kifrs_2120_bc.md": 21,
+    "kifrs_2121_bc.md": 30,
+    "kifrs_2122_bc.md": 33,
+    "kifrs_2123_bc.md": 26,
+    "kifrs_1001_ie.md": 12,
+    "kifrs_1007_ie.md": 7,
+    "kifrs_1008_ie.md": 16,
+    "kifrs_1012_ie.md": 39,
+    "kifrs_1019_ie.md": 1,
+    "kifrs_1021_ie.md": 18,
+    "kifrs_1024_ie.md": 26,
+    "kifrs_1027_ie.md": 1,
+    "kifrs_1028_ie.md": 1,
+    "kifrs_1032_ie.md": 50,
+    "kifrs_1033_ie.md": 14,
+    "kifrs_1034_ie.md": 47,
+    "kifrs_1036_ie.md": 100,
+    "kifrs_1037_ie.md": 20,
+    "kifrs_1038_ie.md": 10,
+    "kifrs_1039_ie.md": 31,
+    "kifrs_1041_ie.md": 4,
+    "kifrs_1101_ie.md": 77,
+    "kifrs_1102_ie.md": 34,
+    "kifrs_1103_ie.md": 136,
+    "kifrs_1105_ie.md": 19,
+    "kifrs_1107_ie.md": 41,
+    "kifrs_1108_ie.md": 7,
+    "kifrs_1109_ie.md": 159,
+    "kifrs_1110_ie.md": 15,
+    "kifrs_1111_ie.md": 73,
+    "kifrs_1113_ie.md": 66,
+    "kifrs_1114_ie.md": 5,
+    "kifrs_1115_ie.md": 368,
+    "kifrs_1116_ie.md": 12,
+    "kifrs_1117_ie.md": 215,
+    "kifrs_2032_ie.md": 1,
+    "kifrs_2101_ie.md": 18,
+    "kifrs_2107_ie.md": 6,
+    "kifrs_2112_ie.md": 38,
+    "kifrs_2114_ie.md": 27,
+    "kifrs_2116_ie.md": 5,
+    "kifrs_2117_ie.md": 4,
+    "kifrs_2121_ie.md": 1,
+    "kifrs_2122_ie.md": 19,
+    "kifrs_2123_ie.md": 10,
+}
 
 # 부록 A 용어정의 존재 검사(양성) — 파일별 기대 (정의 조각 수, 참조 조각 수). 수정 8
 # '있어야 할 것의 부재'형 결함(최초 변환부터의 용어집 탈락)의 재발을 구조적으로 차단한다.
@@ -907,7 +1279,7 @@ def validate(expected):
             if l is None or HEAD_RE.match(l):
                 if cur and size > 6000:
                     warnings.append(f"{fname}: {cur} = {size:,}자")
-                    if (fname, cur) not in WARN_ALLOW:
+                    if (fname, cur) not in WARN_ALLOW and not GALLEY_RE.search(fname):
                         problems.append(f"{fname}: 허용 외 6,000자 초과 문단 {cur} ({size:,}자)")
                 if l is not None:
                     cur, size = HEAD_RE.match(l).group(1), len(l)
@@ -959,6 +1331,19 @@ def validate(expected):
                 if got_k != exp_ids:
                     problems.append(f"{fname}: {kind} 조각 불일치 exp={exp_ids} got={got_k}")
 
+        # BC·IE 갈래 문단 수 고정 검사 (3단계 검수 후 활성화)
+        if BCIE_EXPECT and GALLEY_RE.search(fname):
+            exp_n = BCIE_EXPECT.get(fname)
+            if exp_n is None:
+                problems.append(f"{fname}: BCIE_EXPECT에 미등록 갈래 파일")
+            elif len(got) != exp_n:
+                problems.append(f"{fname}: 갈래 문단 수 불일치 exp={exp_n} got={len(got)}")
+
+    if BCIE_EXPECT:
+        missing = sorted(set(BCIE_EXPECT) - set(expected))
+        if missing:  # 갈래 파일 통째 탈락(있어야 할 것의 부재) 검출 — C-13 전례
+            problems.append(f"BCIE_EXPECT 등록 파일 미생성: {missing[:6]}")
+
     gdup = [k for k, n in all_ids.items() if n > 1]
     if gdup:
         problems.append(f"전역 ID 중복: {gdup[:8]}")
@@ -986,6 +1371,11 @@ def main():
     problems, warnings, n_ids = validate(expected)
     n_para = sum(len(v) for v in expected.values())
     print(f"변환 완료: {len(expected)}개 파일, 문단 {n_para}개, 고유 ID {n_ids}개")
+    g_bc = {f: len(v) for f, v in expected.items() if f.endswith("_bc.md")}
+    g_ie = {f: len(v) for f, v in expected.items() if f.endswith("_ie.md")}
+    if g_bc or g_ie:
+        print(f"  BC·IE 갈래: bc {len(g_bc)}파일 {sum(g_bc.values()):,}문단 / "
+              f"ie {len(g_ie)}파일 {sum(g_ie.values()):,}문단")
     if warnings:
         print(f"\n[경고] 6,000자 초과 문단 {len(warnings)}건 (적재기 분할 정책 대상):")
         for w in warnings:

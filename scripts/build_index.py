@@ -38,15 +38,18 @@ ROOT = Path(__file__).resolve().parent.parent
 INDEX_DIR = ROOT / "index"
 CACHE_DIR = INDEX_DIR / "cache"
 
-# ── 상수 (지시서 0·2·5·7장) ──────────────────────────────────────────
+# ── 상수 (지시서 0·2·5·7장 + BC·IE 확장) ────────────────────────────
 TYPE_CODE = {"감사기준": "KSA", "회계기준": "KIFRS", "실무지침": "GUIDE"}
-EXPECTED_COUNTS = {"감사기준": 3630, "회계기준": 6255, "실무지침": 177}  # 2장 5호 총계 고정
-EXPECTED_TOTAL = 10062
-EXPECTED_POINTS = 10063          # 분할로 부록1 1건 → 2조각 (순증 +1)
+# 회계기준 = 정본 6,255 + 결론도출근거 8,721 + 적용사례 1,753 (규약 4.3-5 갈래, 2026-07-12)
+EXPECTED_COUNTS = {"감사기준": 3630, "회계기준": 16729, "실무지침": 177}
+EXPECTED_TOTAL = 20536
+EXPECTED_POINTS = 20536          # + SPLIT_TARGETS 분할 순증 (아래에서 가산)
 EXPECTED_DEF = 280               # para_type=정의
 EXPECTED_REF = 14                # para_type=참조
+EXPECTED_BC = 8721               # para_type=결론도출근거
+EXPECTED_IE = 1753               # para_type=적용사례
 
-COLLECTION = "standards_20250829_bgem3"
+COLLECTION = "standards_20250829_bgem3_v2"
 META_COLLECTION = COLLECTION + "_meta"   # payload 전용: manifest·vocab·glossary — 서버 무파일 기동용
 MODEL_NAME = "BAAI/bge-m3"
 DENSE_DIM = 1024
@@ -58,9 +61,37 @@ BM25_K1, BM25_B = 1.5, 0.75
 # kiwipiepy 형태소 중 sparse 색인에 남기는 품사: 명사(NNG/NNP)·어근(XR)·영문(SL)·숫자(SN)·한자(SH)
 KEEP_TAGS = {"NNG", "NNP", "XR", "SL", "SN", "SH"}
 
-# [C] 필수 분할 1건 — KSA::240::부록1, 최상위 범주 경계(부정한 재무보고/자산의 횡령)에서 2조각
-SPLIT_TARGET = ("KSA", "240", "부록1")
-SPLIT_MARKER = "자산의 횡령으로 인한 왜곡표시"   # 이 텍스트로 시작하는 본문 행 앞에서 절단
+# [C] 분할 대상 — key: (유형코드, 기준서, 문단) → 절단 마커 목록 (마커 수 + 1 조각).
+# 마커는 "이 텍스트로 시작하는 본문 행" 앞에서 절단. D-09(임베딩 절단 금지) 유지 —
+# 토크나이저 전수 검사(MAX_TOKENS)가 초과 잔존을 중단시키므로 여기 누락은 빌드가 잡는다.
+# BC·IE 갈래 7건은 8,192 토큰 초과 실측(2026-07-12, bge-m3 토크나이저 전수 검사)에 따른
+# 분할 — 마커는 유일-첫 접두 행이며 전 조각 7,200 토큰 이하 확인. 표 한가운데 마커(1115
+# BC510의 606-10 대조표 등)는 표 자체가 8천 토큰을 넘어 불가피 (규약 3.6 의미 경계 우선의
+# 예외 — 행 경계 절단).
+SPLIT_TARGETS = {
+    ("KSA", "240", "부록1"): ["자산의 횡령으로 인한 왜곡표시"],
+    ("KIFRS", "1109", "BCG.2"): [
+        "DO3\tIAS 39를 IFRS 9로 대체하는 주된 목적 중 하나는 금",
+        "기타 참고사항",
+        "[^43]: 이 금액은 제2기간 말에 통합 익스포저의 현재가치 변동으"],
+    ("KIFRS", "1115", "BC510"): [
+        "| B27 | 606-10-55-29 |",
+        "| IE291 | 606-10-55-377 |",
+        "[^9]: IASB는 IFRS 17 ‘보험계약’을 공표함으로써 보험과"],
+    ("KIFRS", "1109", "IE159"): [
+        "**채무상품의 존속기간에 이자율이 사전에 산정된 방식에 따라 점진적으",
+        "**D.2.2 매매일 또는 결제일: 매도에 따라 기록할 금액**"],
+    ("KIFRS", "1108", "BC62"): [
+        "**양적기준**",
+        "106.\t수익이 어떻게 개별 국가에 배분되어야 하는지에 대하여 의문을"],
+    ("KIFRS", "1012", "IE사례3-4"): [
+        "(i) 회계이익에 적용세율을 곱하여 산출한 금액과 법인세비용(수익)간",
+        "20X1년 1월 1일에 기업 A는 기업 B를 100% 취득하였다. 기"],
+    ("KIFRS", "1001", "BC106"): ["**이 기준서의 주요 특징**"],
+    ("KIFRS", "1001", "IG6"): ["| 당기손익으로 재분류될 수 있는 항목과 관련된 법인세⑵ | (1,1"],
+    ("KIFRS", "1116", "IE2"): ["| 사례 9B: 고객은 공급자와 3년간 분명히 특정된 발전소에서 생산"],
+}
+EXPECTED_POINTS += sum(len(v) for v in SPLIT_TARGETS.values())
 
 # [F] 용어 사전 — 정의 절 로케이터: section_path 말단 세그먼트의 완전 일치(괄호 참조 변형 허용)
 DEF_SECTION_RE = re.compile(r"^(용어의\s*)?정의\s*(\([^)]*\))?$")
@@ -164,6 +195,12 @@ def parse_corpus():
 
 def derive_para_type(r):
     p, st = r["para_no"], r["source_type"]
+    # 회계기준 BC/IE/IG 접두 = 비정본 첨부물 (규약 4.3-5) — 알파벳 접두(적용지침)보다
+    # 선순위: BC1·IE1이 아래 규칙에 오포획되면 비정본이 정본 부속으로 유출된다 (C-07)
+    if st == "회계기준" and p.startswith("BC"):
+        return "결론도출근거"
+    if st == "회계기준" and p.startswith(("IE", "IG")):
+        return "적용사례"
     if p.startswith("정의-"):
         return "정의"
     if re.fullmatch(r"참조\d+", p):
@@ -180,24 +217,31 @@ def derive_para_type(r):
 # ══════════════════════════ [C] 분할: 240::부록1 ══════════════════════════
 
 def split_records(records):
-    out, done = [], False
+    out, done = [], set()
     for r in records:
         key = (TYPE_CODE[r["source_type"]], r["standard_no"], r["para_no"])
-        if key != SPLIT_TARGET:
+        markers = SPLIT_TARGETS.get(key)
+        if not markers:
             out.append(r)
             continue
         lines = r["document"].split("\n")
-        cut = next(i for i, l in enumerate(lines) if l.strip().startswith(SPLIT_MARKER))
-        assert cut > 0
-        parts = ["\n".join(lines[:cut]).rstrip(), "\n".join(lines[cut:]).rstrip()]
+        cuts = []
+        for mk in markers:
+            cut = next(i for i, l in enumerate(lines) if l.strip().startswith(mk))
+            assert cut > 0, f"{key} 마커 위치 0: {mk}"
+            cuts.append(cut)
+        assert cuts == sorted(cuts), f"{key} 마커 순서 오류"
+        bounds = [0] + cuts + [len(lines)]
+        parts = ["\n".join(lines[a:b]).rstrip() for a, b in zip(bounds, bounds[1:])]
+        assert all(p.strip() for p in parts), f"{key} 빈 조각 발생"
         for n, text in enumerate(parts, 1):
             pr = dict(r)
             pr.update(composite_id=f"{r['composite_id']}#{n}", document=text,
-                      char_len=len(text), part_no=n, part_total=2,
+                      char_len=len(text), part_no=n, part_total=len(parts),
                       has_table=any(l.lstrip().startswith("|") for l in text.split("\n")))
             out.append(pr)
-        done = True
-    assert done, f"분할 대상 {SPLIT_TARGET} 미발견"
+        done.add(key)
+    assert done == set(SPLIT_TARGETS), f"분할 대상 미발견: {set(SPLIT_TARGETS) - done}"
     return out
 
 
@@ -218,6 +262,10 @@ def synth_text(r):
 def build_glossary(records):
     entries, stats = [], Counter()
     for r in records:
+        # BC·IE 갈래는 용어 사전 원천이 아니다 — BC 내부 '…의 정의' 절이 정의 절
+        # 로케이터에 오포획되는 것을 조기 차단 (규약 4.3-5)
+        if r["para_type"] in ("결론도출근거", "적용사례"):
+            continue
         base = {"source_id": r["composite_id"], "standard_no": r["standard_no"],
                 "source_type": r["source_type"]}
         # 원천 ① para_type="정의" (본문 = "{용어}: {정의문}")
@@ -373,6 +421,7 @@ def ensure_collection(client, name):
                          ("standard_no", qm.PayloadSchemaType.KEYWORD),
                          ("para_no", qm.PayloadSchemaType.KEYWORD),
                          ("para_type", qm.PayloadSchemaType.KEYWORD),
+                         ("source_file", qm.PayloadSchemaType.KEYWORD),
                          ("seq", qm.PayloadSchemaType.INTEGER),
                          ("part_no", qm.PayloadSchemaType.INTEGER)]:
         try:
@@ -457,15 +506,16 @@ def run_checks(client, records, report):
     report.append("── 점검 1~7 (규약 5장) ──")
     n_points = client.count(COLLECTION, exact=True).count
     check("1 문단 수", n_points == EXPECTED_POINTS, f"포인트 {n_points} (기대 {EXPECTED_POINTS})")
-    # 2 연속성: seq 1..N (분할 조각은 원문단의 seq 공유 — 파서 산출 기준)
+    # 2 연속성: seq 1..N — 스코프는 source_file (규약 2.2 seq 항, 4차 개정).
+    # 한 기준서 = 정본·BC·IE 여러 파일이므로 기준서 스코프로는 이웃 검사가 무의미하다.
     bad_seq = []
-    by_std = defaultdict(set)
+    by_file = defaultdict(set)
     for r in records:
-        by_std[(r["source_type"], r["standard_no"])].add(r["seq"])
-    for k, seqs in by_std.items():
+        by_file[r["source_file"]].add(r["seq"])
+    for k, seqs in by_file.items():
         if sorted(seqs) != list(range(1, len(seqs) + 1)):
             bad_seq.append(k)
-    check("2 seq 연속성", not bad_seq, f"이상 {bad_seq[:3]}")
+    check("2 seq 연속성(파일 스코프)", not bad_seq, f"이상 {bad_seq[:3]}")
     ids = [r["composite_id"] for r in records]
     uuids = {str(uuid.uuid5(PROJECT_NS, i)) for i in ids}
     check("3 ID 유일성", len(set(ids)) == len(ids) == len(uuids) == n_points,
@@ -500,7 +550,8 @@ def run_checks(client, records, report):
         if "part_no" in r:
             parts[(r["standard_no"], r["para_no"])].append((r["part_no"], r["part_total"]))
     part_ok = all(sorted(p for p, _ in v) == list(range(1, v[0][1] + 1)) for v in parts.values())
-    check("7 분할 정합", part_ok and list(parts) == [("240", "부록1")], f"{dict(parts)}")
+    exp_parts = {(no, para) for _, no, para in SPLIT_TARGETS}
+    check("7 분할 정합", part_ok and set(parts) == exp_parts, f"{dict(parts)}")
     report.append("  [정보] 8 cross_refs 실재성 — v2 백로그, 보류")
     return ok
 
@@ -563,11 +614,14 @@ def run_smokes(client, records, model, report):
     n = client.count(COLLECTION, count_filter=qfilter(para_type="정의", standard_no="1200"),
                      exact=True).count
     check("S6 정의×1200", n == 65, f"{n}건")
-    # S7 분할 재조립
-    pts, _ = client.scroll(COLLECTION, scroll_filter=qfilter(standard_no="240", para_no="부록1"),
-                           limit=10, with_payload=True)
-    pn = sorted(p.payload.get("part_no") for p in pts)
-    check("S7 부록1 재조립", len(pts) == 2 and pn == [1, 2], f"{len(pts)}건 part_no={pn}")
+    # S7 분할 재조립 — 전 분할 대상 (part_no 1..N 결번·중복 없음)
+    for (c, no, para), mks in sorted(SPLIT_TARGETS.items()):
+        pts, _ = client.scroll(COLLECTION, scroll_filter=qfilter(standard_no=no, para_no=para),
+                               limit=20, with_payload=True)
+        pn = sorted(p.payload.get("part_no") for p in pts)
+        n_exp = len(mks) + 1
+        check(f"S7 {c}::{no}::{para} 재조립", len(pts) == n_exp and pn == list(range(1, n_exp + 1)),
+              f"{len(pts)}건 part_no={pn}")
     # S8 참조 갈래
     n_ref_local = sum(1 for r in records if r["para_type"] == "참조")
     n_ref = client.count(COLLECTION, count_filter=qfilter(para_type="참조"), exact=True).count
@@ -588,6 +642,17 @@ def run_smokes(client, records, model, report):
             break
     check("S9 왕복+본문 전수", mismatch == 0 and seen == EXPECTED_POINTS,
           f"{seen}건 검사, 불일치 {mismatch}")
+    # S10 BC 갈래 직조회 — 비정본 첨부물이 논리 ID로 실재·본문 보유 (규약 4.3-5)
+    pid = str(uuid.uuid5(PROJECT_NS, "KIFRS::1116::BC1"))
+    got = client.retrieve(COLLECTION, ids=[pid], with_payload=True)
+    check("S10 직조회 KIFRS::1116::BC1",
+          bool(got) and got[0].payload["para_type"] == "결론도출근거"
+          and "IFRS 16" in got[0].payload["document"], "")
+    # S11 para_type 카운트 — 갈래 2종이 기대 수량으로 적재됐는지 (분할 조각 포함, 로컬 대조)
+    for pt in ("결론도출근거", "적용사례"):
+        n_local = sum(1 for r in records if r["para_type"] == pt)
+        n_db = client.count(COLLECTION, count_filter=qfilter(para_type=pt), exact=True).count
+        check(f"S11 {pt}", n_db == n_local, f"DB {n_db} = 로컬 {n_local}")
     # P1~P3 장문 프로브 (기록용 — 합격 기준 아님)
     report.append("── P1~P3 장문 프로브 (기록용: dense 순위 / 하이브리드 순위) ──")
     for name, query, target in [("P1", "전문가적 의구심의 정의", "KSA::200::13"),
@@ -620,6 +685,12 @@ def prepare():
     dist = Counter(r["para_type"] for r in records)
     assert dist["정의"] == EXPECTED_DEF, f"정의 {dist['정의']} != {EXPECTED_DEF}"
     assert dist["참조"] == EXPECTED_REF, f"참조 {dist['참조']} != {EXPECTED_REF}"
+    assert dist["결론도출근거"] == EXPECTED_BC, f"결론도출근거 {dist['결론도출근거']} != {EXPECTED_BC}"
+    assert dist["적용사례"] == EXPECTED_IE, f"적용사례 {dist['적용사례']} != {EXPECTED_IE}"
+    # 정본 불변 게이트: 갈래를 제외한 정본 문단 수가 v1과 동일해야 한다 (C-07 재발 방지)
+    n_canon = sum(1 for r in records
+                  if r["para_type"] not in ("결론도출근거", "적용사례"))
+    assert n_canon == 10062, f"정본 문단 수 변동: {n_canon} != 10062 (v1)"
     records = split_records(records)
     assert len(records) == EXPECTED_POINTS
     texts = [synth_text(r) for r in records]
@@ -739,8 +810,10 @@ def stage_upsert(records, texts, dense, sparse_vecs, smeta, report, ext_meta=Non
         "embedding": embedding_info,
         "sparse": smeta,
         "paragraphs": EXPECTED_TOTAL, "points": EXPECTED_POINTS,
-        "para_type_expected": {"정의": EXPECTED_DEF, "참조": EXPECTED_REF},
-        "split": {"KSA::240::부록1": {"parts": 2, "boundary": SPLIT_MARKER}},
+        "para_type_expected": {"정의": EXPECTED_DEF, "참조": EXPECTED_REF,
+                               "결론도출근거": EXPECTED_BC, "적용사례": EXPECTED_IE},
+        "split": {f"{c}::{n}::{p}": {"parts": len(m) + 1, "boundaries": m}
+                  for (c, n, p), m in SPLIT_TARGETS.items()},
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     upsert_meta(client, manifest, report)

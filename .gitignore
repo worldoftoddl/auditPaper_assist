@@ -4,3 +4,7 @@ __pycache__/
 index/cache/
 index/embeddings.npy
 index/cids.json
+.codex/
+.agents/
+.pytest_cache/
+raw/

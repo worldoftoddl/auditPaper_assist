@@ -86,7 +86,8 @@ Colab+터널 호스팅이면 URL을 세션마다 운영자에게 확인.
 | `source_type` | string[], 선택 | `감사기준` \| `회계기준` \| `실무지침` |
 | `para_type` | string, 선택 | 위 6종 중 1개 |
 | `top_k` | int, 기본 8 | 1~20 |
-| `include_examples` | bool, 기본 false | 예시류(부록) 포함 스위치 — 문안·예시 작성 작업이면 true |
+| `include_examples` | bool, 기본 false | 예시류(부록·**적용사례 IE**) 포함 스위치 — 문안·예시·회계처리 사례 작업이면 true |
+| `include_bc` | bool, 기본 false | **결론도출근거(BC)** 포함 스위치 — 기준 제정 근거·연혁·논리구축 질의면 true |
 
 출력:
 
